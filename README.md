@@ -1,10 +1,11 @@
 # CEIDG Wydruk (macOS)
 
-Mała aplikacja SwiftUI: wpisujesz NIP → pobiera dane firmy z CEIDG i zapisuje wydruk jako PDF (A4).
+Mała aplikacja SwiftUI z wbudowaną przeglądarką: wpisujesz NIP → aplikacja otwiera
+wyszukiwarkę CEIDG, wpisuje NIP, otwiera wpis firmy, klika „Wydruk” i zapisuje
+oficjalny PDF w folderze **Pobrane** (`CEIDG_<NIP>.pdf`), po czym go otwiera.
 
 ## Wymagania
 - macOS 13+, Xcode lub Command Line Tools (`xcode-select --install`)
-- Bezpłatny token API CEIDG (JWT) – wniosek na biznes.gov.pl („Dostęp do API CEIDG / hurtowni danych”)
 
 ## Uruchomienie
 ```bash
@@ -12,12 +13,10 @@ swift run              # szybki start
 ./build-app.sh         # buduje CEIDGWydruk.app
 open CEIDGWydruk.app
 ```
-Token wpisz w **Ustawieniach** aplikacji (⌘,).
 
-## Jak działa
-- Sprawdza sumę kontrolną NIP.
-- Odpytuje `GET https://dane.biznes.gov.pl/api/ceidg/v3/firma?nip=…` z nagłówkiem `Authorization: Bearer <token>`.
-- Z otrzymanych danych (firma, właściciel, NIP/REGON, status, adresy, PKD, daty) generuje PDF i otwiera go.
-
-Uwaga: to wydruk wygenerowany z danych API, a nie urzędowy wydruk z wyszukiwarki CEIDG.
-Oficjalny PDF można pobrać z wyszukiwarki CEIDG (link w oknie aplikacji).
+## Uwagi
+- Strona CEIDG jest widoczna w oknie. Jeśli automat się zatrzyma (captcha, zmiana
+  wyglądu strony), dokończ ręcznie – kliknięty wydruk PDF i tak zostanie zapisany.
+- „Zapisz stronę jako PDF” zapisuje aktualnie widoczną stronę (wyjście awaryjne).
+- Adres startowy: `searchURL` na początku `Sources/CEIDGWydruk/main.swift`.
+  Selektory przycisków są w enumie `JS` – w razie zmian na stronie wystarczy je poprawić.
