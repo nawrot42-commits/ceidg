@@ -1,6 +1,6 @@
 # CEIDG Wydruk (macOS)
 
-Mała aplikacja SwiftUI z wbudowaną przeglądarką: wpisujesz NIP → aplikacja otwiera
+Mała aplikacja (AppKit) z wbudowaną przeglądarką: wpisujesz NIP → aplikacja otwiera
 wyszukiwarkę CEIDG, wpisuje NIP, otwiera wpis firmy, klika „Wydruk” i zapisuje
 oficjalny PDF w folderze **Pobrane** (`CEIDG_<NIP>.pdf`), po czym go otwiera.
 

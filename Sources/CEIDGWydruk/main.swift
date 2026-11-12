@@ -1,4 +1,3 @@
-import SwiftUI
 import AppKit
 import WebKit
 import UniformTypeIdentifiers
@@ -83,12 +82,14 @@ enum JS {
 // MARK: - Sterownik przeglądarki
 
 @MainActor
-final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
+final class Browser: NSObject, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
     enum Step { case idle, search, results, details, waitingPDF, done }
 
     let webView: WKWebView
-    @Published var status = "Wpisz NIP i kliknij „Pobierz wydruk”."
-    @Published var busy = false
+    /// Wywoływane przy każdej zmianie statusu – odświeża okno.
+    var onChange: (() -> Void)?
+    var status = "Wpisz NIP i kliknij „Pobierz wydruk”." { didSet { onChange?() } }
+    var busy = false { didSet { onChange?() } }
 
     private var step: Step = .idle
     private var nip = ""
@@ -238,65 +239,122 @@ final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDeleg
     }
 }
 
-// MARK: - UI
+// MARK: - Okno (AppKit)
 
-struct WebView: NSViewRepresentable {
-    let webView: WKWebView
-    func makeNSView(context: Context) -> WKWebView { webView }
-    func updateNSView(_ nsView: WKWebView, context: Context) {}
-}
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    let browser = Browser()
+    var window: NSWindow!
+    let nipField = NSTextField()
+    let fetchButton = NSButton(title: "Pobierz wydruk", target: nil, action: nil)
+    let saveButton = NSButton(title: "Zapisz stronę jako PDF", target: nil, action: nil)
+    let spinner = NSProgressIndicator()
+    let statusLabel = NSTextField(wrappingLabelWithString: "")
 
-struct ContentView: View {
-    @StateObject private var browser = Browser()
-    @State private var nip = ""
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        nipField.placeholderString = "NIP, np. 1234563218"
+        nipField.target = self
+        nipField.action = #selector(go)
+        fetchButton.target = self
+        fetchButton.action = #selector(go)
+        fetchButton.bezelStyle = .rounded
+        saveButton.target = self
+        saveButton.action = #selector(savePage)
+        saveButton.bezelStyle = .rounded
+        spinner.style = .spinning
+        spinner.controlSize = .small
+        spinner.isDisplayedWhenStopped = false
+        statusLabel.textColor = .secondaryLabelColor
+        statusLabel.isSelectable = true
 
-    private var digits: String { NIP.normalize(nip) }
+        let spacer = NSView()
+        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let bar = NSStackView(views: [nipField, fetchButton, spinner, spacer, saveButton])
+        bar.orientation = .horizontal
+        bar.spacing = 8
 
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                TextField("NIP, np. 1234563218", text: $nip)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 220)
-                    .onSubmit(go)
-                Button("Pobierz wydruk", action: go)
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(browser.busy || digits.count != 10)
-                if browser.busy { ProgressView().controlSize(.small) }
-                Spacer()
-                Button("Zapisz stronę jako PDF") { browser.savePageAsPDF() }
-            }
-            .padding(10)
-            Text(browser.status)
-                .font(.callout).foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 10).padding(.bottom, 8)
-                .textSelection(.enabled)
-            Divider()
-            WebView(webView: browser.webView)
+        let web = browser.webView
+        let content = NSView()
+        for v in [bar, statusLabel, web] as [NSView] {
+            v.translatesAutoresizingMaskIntoConstraints = false
+            content.addSubview(v)
         }
-        .frame(minWidth: 900, minHeight: 650)
+        NSLayoutConstraint.activate([
+            nipField.widthAnchor.constraint(equalToConstant: 220),
+            bar.topAnchor.constraint(equalTo: content.topAnchor, constant: 10),
+            bar.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 10),
+            bar.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -10),
+            statusLabel.topAnchor.constraint(equalTo: bar.bottomAnchor, constant: 8),
+            statusLabel.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 10),
+            statusLabel.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -10),
+            web.topAnchor.constraint(equalTo: statusLabel.bottomAnchor, constant: 8),
+            web.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            web.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            web.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+        ])
+
+        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1000, height: 750),
+                          styleMask: [.titled, .closable, .miniaturizable, .resizable],
+                          backing: .buffered, defer: false)
+        window.title = "CEIDG Wydruk"
+        window.contentView = content
+        window.minSize = NSSize(width: 800, height: 550)
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+        window.makeFirstResponder(nipField)
+
+        browser.onChange = { [weak self] in self?.refresh() }
+        refresh()
+        NSApp.activate(ignoringOtherApps: true)
     }
 
-    private func go() {
+    func refresh() {
+        statusLabel.stringValue = browser.status
+        fetchButton.isEnabled = !browser.busy
+        if browser.busy { spinner.startAnimation(nil) } else { spinner.stopAnimation(nil) }
+    }
+
+    @objc func go() {
+        guard !browser.busy else { return }
+        let digits = NIP.normalize(nipField.stringValue)
         guard NIP.isValid(digits) else {
-            browser.status = "Niepoprawny NIP (błędna suma kontrolna)."
+            browser.status = "Niepoprawny NIP (wpisz 10 cyfr, sprawdź sumę kontrolną)."
             return
         }
         browser.start(nip: digits)
     }
+
+    @objc func savePage() { browser.savePageAsPDF() }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 }
 
-struct CEIDGWydrukApp: App {
-    init() {
-        // Pozwala uruchomić aplikację przez `swift run` jak zwykłą aplikację z oknem.
-        NSApplication.shared.setActivationPolicy(.regular)
-        NSApplication.shared.activate(ignoringOtherApps: true)
-    }
+@MainActor
+/// Menu z „Edycja”, żeby działało ⌘V (wklejanie NIP) i ⌘Q.
+func buildMenu() -> NSMenu {
+    let main = NSMenu()
+    let appItem = NSMenuItem()
+    let appMenu = NSMenu()
+    appMenu.addItem(withTitle: "Zakończ CEIDG Wydruk", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+    appItem.submenu = appMenu
+    main.addItem(appItem)
 
-    var body: some Scene {
-        WindowGroup("CEIDG Wydruk") { ContentView() }
-    }
+    let editItem = NSMenuItem()
+    let edit = NSMenu(title: "Edycja")
+    edit.addItem(withTitle: "Wytnij", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+    edit.addItem(withTitle: "Kopiuj", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+    edit.addItem(withTitle: "Wklej", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+    edit.addItem(withTitle: "Zaznacz wszystko", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+    editItem.submenu = edit
+    main.addItem(editItem)
+    return main
 }
 
-CEIDGWydrukApp.main()
+MainActor.assumeIsolated {
+    let app = NSApplication.shared
+    let delegate = AppDelegate()
+    app.delegate = delegate
+    app.setActivationPolicy(.regular)
+    app.mainMenu = buildMenu()
+    app.run()
+}
