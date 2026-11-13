@@ -18,7 +18,19 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleShortVersionString</key><string>1.0</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>NSHighResolutionCapable</key><true/>
+  <key>CFBundleURLTypes</key>
+  <array><dict>
+    <key>CFBundleURLName</key><string>local.ceidg.wydruk</string>
+    <key>CFBundleURLSchemes</key><array><string>ceidgwydruk</string></array>
+  </dict></array>
 </dict></plist>
 PLIST
 codesign --force --sign - "$APP" 2>/dev/null || true
-echo "Gotowe: $APP"
+
+# Instalacja w ~/Applications i rejestracja adresu ceidgwydruk:// (potrzebne dla Raycasta)
+mkdir -p "$HOME/Applications"
+rm -rf "$HOME/Applications/$APP"
+cp -R "$APP" "$HOME/Applications/"
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$HOME/Applications/$APP" || true
+chmod +x raycast/*.sh 2>/dev/null || true
+echo "Gotowe: $APP (zainstalowano też w $HOME/Applications)"

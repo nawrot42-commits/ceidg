@@ -306,6 +306,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         browser.onChange = { [weak self] in self?.refresh() }
         refresh()
         NSApp.activate(ignoringOtherApps: true)
+
+        // NIP podany przy starcie: `open -a CEIDGWydruk --args 1234563218`
+        if let arg = CommandLine.arguments.dropFirst().first(where: { NIP.normalize($0).count == 10 }) {
+            pendingNIP = NIP.normalize(arg)
+        }
+        if let nip = pendingNIP { pendingNIP = nil; start(nip: nip) }
+    }
+
+    private var pendingNIP: String?
+
+    /// Wywołanie z Raycasta / Terminala: `open "ceidgwydruk://1234563218"`
+    func application(_ application: NSApplication, open urls: [URL]) {
+        guard let url = urls.first else { return }
+        let nip = NIP.normalize(url.absoluteString)
+        if window == nil { pendingNIP = nip } else { start(nip: nip) }
+    }
+
+    private func start(nip: String) {
+        nipField.stringValue = nip
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        browser.busy = false
+        go()
     }
 
     func refresh() {
